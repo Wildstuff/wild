@@ -1,0 +1,47 @@
+# load.yaml — the readable load plan for this bundle (DDD lane).
+#
+# What `wild tribe apply` pins, and in what order. In the DDD lane the ONE
+# `ontology/model.yaml` is the ontology — the loader does NOT read `seeds.yaml` /
+# `functions/` / `verbs/` / `sources/` (there are none here). Apply COMPILES the
+# model into the full DataCommand stream a hand-authored ontology would produce,
+# then loads the seed data + pass-through lanes below.
+#
+#   wild tribe apply examples/tribes/liquidity-management/ --as acme-liquidity
+#
+# pins the compiled ontology AND ingests the data/ seed records — one command, a
+# live, `ddd`-stamped tribe. `--as` lets one example base spin up several
+# instances, each its own ontology + data.
+
+# ── The constitution (compiled) ─────────────────────────────────────────
+# The domain model is the single source. `compile_ddd_source` lowers it, in
+# enforced dependency order, to:
+#   value objects (iban mod-97, money_amount EUR)  → the `conforms_to` bindings
+#   named pure functions (@vat_amount, …)          → declared before the types
+#   aggregates + lifecycles + relations            → the type vocabulary + verbs
+#   the debtor projection (CQRS read-model)         → grouped over invoice
+#   Layer-B source bindings (bank hourly, …)        → the intake_source registry
+model:
+  - ontology/model.yaml
+
+# ── Pass-through lanes (NOT emitted by the compiler) ─────────────────────
+# The enrichment rule runs the ingest-boundary enrich stage; the compiler does
+# not own it, so it ships as a hand-authored file and loads through the same
+# loader lane as in the legacy bundle.
+pass_through:
+  - ontology/enrichment_rules/partner_risk_band.yaml
+
+# ── Seed records (one-shot starter, lane-independent) ────────────────────
+# Identical to the legacy bundle: each CSV sits beside its intake mapping
+# (`<name>.intake.yaml`); `intake: auto` = 1:1, else the named mapping carries
+# renames / per-file constants. Loaded in enforced-reference order (partners
+# before invoices). This is the STARTER seed; the recurring feeds are the model's
+# Layer-B `sources:` bindings (point each `locator` at your real export folder).
+data:
+  - { file: data/business-partners.csv, type: business_partner, intake: auto }
+  - { file: data/bank-transactions.csv, type: transaction,      intake: auto }
+  - { file: data/invoices-outbound.csv, type: invoice, intake: data/invoices-outbound.intake.yaml }
+  - { file: data/invoices-inbound.csv,  type: invoice, intake: data/invoices-inbound.intake.yaml }
+  - { file: data/bank-accounts.csv,     type: bank_account,    intake: auto }
+  - { file: data/credit-facilities.csv, type: credit_facility, intake: auto }
+  - { file: data/dunnings.csv,          type: dunning,         intake: auto }
+  - { file: data/payment-promises.csv,  type: payment_promise, intake: auto }

@@ -1,0 +1,4 @@
+iban,account_name,bank,currency,balance,balance_date
+DE89370400440532013000,Main Business Account,Commerce Bank Cologne,EUR,42850.00,2026-06-18
+DE35370400440532013002,Reserve Account,Commerce Bank Cologne,EUR,75000.00,2026-06-18
+DE08370400440532013003,Tax Account,Cologne-Bonn Savings Bank,EUR,18200.00,2026-06-18

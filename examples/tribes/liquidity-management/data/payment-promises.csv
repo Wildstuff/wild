@@ -1,0 +1,3 @@
+id,invoice_id,promised_date,promised_amount,status,note
+PROM-SEED-001,RE-2026-0032,2026-07-10,7400.00,open,Payment promised once the end customer pays
+PROM-SEED-002,RE-2026-0040,2026-07-05,8800.00,open,Requested installment payment in two tranches
