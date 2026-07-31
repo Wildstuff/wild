@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Regenerate this bundle's seed CSVs, anchored at TODAY.
+
+The sample data is DERIVED, not typed. Every fact that has to agree with
+another one is computed here: a settled invoice gets its bank booking (right
+counterparty, right IBAN, right amount, a date after issuance), each account's
+`balance` folds from its `opening_balance` plus the movements booked on it, and
+every minted IBAN carries a valid mod-97 check digit. Hand-editing the CSVs is
+how the previous cut drifted into payments that predated their invoice and
+debtors who paid someone else's bill.
+
+Transaction `amount` is UNSIGNED here because the model declares it so —
+`direction` carries the sign. A signed amount would make
+`cash_flow_13w.gross_movement` (a plain sum) quietly report the net.
+
+    python3 examples/tribes/liquidity-management/data/regenerate-seed.py
+
+Writes the CSVs in place, beside this file. Moving TODAY forward is the whole
+point of keeping this around: re-cut the data, then move `window.start` in
+`apps/liquidity-report.yaml` to the first Monday after it.
+"""
+import csv
+import os
+from datetime import date, timedelta
+
+TODAY = date(2026, 7, 31)
+OPENING = date(2026, 5, 1)
+OUT = os.path.dirname(os.path.abspath(__file__))
+
+
+def iban_de(bban: str) -> str:
+    """Mint a German IBAN with a correct mod-97 check digit."""
+    assert len(bban) == 18, bban
+    rearranged = bban + "DE00"
+    digits = "".join(str(int(c, 36)) for c in rearranged)
+    check = 98 - (int(digits) % 97)
+    return f"DE{check:02d}{bban}"
+
+
+def mod97_ok(i: str) -> bool:
+    s = i[4:] + i[:4]
+    return int("".join(str(int(c, 36)) for c in s)) % 97 == 1
+
+
+def d(s):
+    return s.isoformat()
+
+
+# ── Accounts ────────────────────────────────────────────────────────────────
+MAIN = "DE89370400440532013000"
+RESERVE = "DE35370400440532013002"
+TAX = "DE08370400440532013003"
+PAYROLL = "DE62370400440532013001"  # counterparty only (the payroll clearing)
+
+ACCOUNTS = [
+    # iban, name, bank, opening balance on OPENING
+    (MAIN, "Main Business Account", "Commerce Bank Cologne", "60000.00"),
+    (RESERVE, "Reserve Account", "Commerce Bank Cologne", "75000.00"),
+    (TAX, "Tax Account", "Cologne-Bonn Savings Bank", "3200.00"),
+]
+
+# ── Partners ────────────────────────────────────────────────────────────────
+# BP-005 and BP-007 used to duplicate BP-002 / BP-003 (same name, same IBAN);
+# they are distinct companies now.
+BP5_IBAN = iban_de("200505500000778899")
+BP7_IBAN = iban_de("701500000123456780")
+
+PARTNERS = [
+    # id, name, role, iban, terms, disc%, disc_days, city, notes, chat
+    ("BP-001", "Smith Corp", "debtor", "DE44500105175407324931", 30, "", "", "Berlin",
+     "Key account - largest revenue contributor", "100200301"),
+    ("BP-002", "Brewer & Sons Ltd", "debtor", "DE62200700240000279500", 14, "", "", "Hamburg",
+     "Short payment terms - reliable payer", "100200302"),
+    ("BP-003", "Little & Partners", "debtor", "DE26200400600087654300", 30, "", "", "Munich",
+     "Mid-tier consulting client", ""),
+    ("BP-004", "Hoffman Trading Co", "debtor", "DE79345678901234567890", 14, "", "", "Cologne",
+     "Irregular payment behaviour - watch DSO", "100200304"),
+    ("BP-005", "Nordwind Maritime GmbH", "debtor", BP5_IBAN, 30, "", "", "Bremen",
+     "Project-based - large single invoices", "100200305"),
+    ("BP-006", "Weaver Consulting", "debtor", "DE78200400600012312300", 30, "", "", "Frankfurt",
+     "Reliable - always pays within terms", "100200306"),
+    ("BP-007", "Aurora Labs Ltd", "debtor", BP7_IBAN, 60, "", "", "Stuttgart",
+     "New client since Q1 2026 - 60-day terms agreed", ""),
+    ("SUP-001", "TechParts Inc", "creditor", "DE02120300000000202051", 30, 2, 10, "Stuttgart",
+     "Cash discount 2/10 net 30 - take it when possible", ""),
+    ("SUP-002", "Logistics Express Ltd", "creditor", "DE80200400600004444400", 30, "", "", "Dortmund",
+     "No cash discount - negotiate terms in Q3", ""),
+    ("SUP-003", "Miller Office", "creditor", "DE32700100800012345000", 30, "", "", "Berlin",
+     "Office supplies and rent - fixed monthly", ""),
+    ("SUP-004", "Berlin City Utilities", "creditor", "DE58200400600971586400", 30, "", "", "Berlin",
+     "Utilities - fixed schedule", ""),
+    ("SUP-005", "Hoffman Printing", "creditor", "DE03200400600022222200", 30, 2, 10, "Leipzig",
+     "Cash discount 2/10 - new supplier since May", ""),
+]
+P = {p[0]: p for p in PARTNERS}
+
+# ── Receivables (outbound) ──────────────────────────────────────────────────
+# (id, partner, issued, due, amount, paid_date or None)
+OUTBOUND = [
+    ("RE-2026-0031", "BP-001", date(2026, 5, 4), date(2026, 6, 3), "15000.00", date(2026, 6, 1)),
+    ("RE-2026-0033", "BP-005", date(2026, 5, 11), date(2026, 6, 10), "8900.00", date(2026, 6, 8)),
+    ("RE-2026-0038", "BP-007", date(2026, 6, 1), date(2026, 7, 31), "9200.00", date(2026, 6, 26)),
+    ("RE-2026-0039", "BP-003", date(2026, 6, 8), date(2026, 7, 8), "4500.00", date(2026, 7, 3)),
+    ("RE-2026-0045", "BP-002", date(2026, 7, 6), date(2026, 7, 20), "6300.00", date(2026, 7, 17)),
+    # overdue as of TODAY - the dunning chain works on these
+    ("RE-2026-0032", "BP-004", date(2026, 5, 18), date(2026, 6, 17), "7400.00", None),
+    ("RE-2026-0035", "BP-001", date(2026, 6, 5), date(2026, 7, 5), "11500.00", None),
+    ("RE-2026-0036", "BP-006", date(2026, 6, 12), date(2026, 7, 12), "6800.00", None),
+    ("RE-2026-0037", "BP-004", date(2026, 6, 22), date(2026, 7, 22), "4100.00", None),
+    # open, falling due inside the 13-week forecast window
+    ("RE-2026-0040", "BP-002", date(2026, 7, 20), date(2026, 8, 3), "8800.00", None),
+    ("RE-2026-0041", "BP-001", date(2026, 7, 13), date(2026, 8, 12), "16500.00", None),
+    ("RE-2026-0042", "BP-005", date(2026, 7, 20), date(2026, 8, 19), "24000.00", None),
+    ("RE-2026-0043", "BP-006", date(2026, 7, 27), date(2026, 8, 26), "5600.00", None),
+    ("RE-2026-0044", "BP-004", date(2026, 7, 29), date(2026, 8, 12), "3900.00", None),
+    ("RE-2026-0046", "BP-003", date(2026, 7, 30), date(2026, 8, 29), "7200.00", None),
+    ("RE-2026-0049", "BP-001", date(2026, 7, 22), date(2026, 9, 20), "9600.00", None),
+    ("RE-2026-0048", "BP-005", date(2026, 7, 15), date(2026, 10, 13), "18000.00", None),
+    ("RE-2026-0047", "BP-007", date(2026, 7, 24), date(2026, 9, 22), "12400.00", None),
+]
+
+# ── Payables (inbound) ──────────────────────────────────────────────────────
+INBOUND = [
+    ("EK-2026-0091", "SUP-001", date(2026, 5, 4), date(2026, 6, 3), "8500.00", date(2026, 5, 29)),
+    ("EK-2026-0098", "SUP-001", date(2026, 6, 8), date(2026, 7, 8), "3800.00", date(2026, 7, 2)),
+    # overdue as of TODAY
+    ("EK-2026-0092", "SUP-002", date(2026, 6, 1), date(2026, 7, 1), "3100.00", None),
+    ("EK-2026-0093", "SUP-003", date(2026, 6, 10), date(2026, 7, 10), "1200.00", None),
+    # open, due inside the window; the last two still have a cash-discount window
+    ("EK-2026-0094", "SUP-001", date(2026, 7, 6), date(2026, 8, 5), "5800.00", None),
+    ("EK-2026-0095", "SUP-004", date(2026, 7, 8), date(2026, 8, 7), "2400.00", None),
+    ("EK-2026-0096", "SUP-002", date(2026, 7, 13), date(2026, 8, 12), "7200.00", None),
+    ("EK-2026-0097", "SUP-003", date(2026, 7, 15), date(2026, 8, 14), "980.00", None),
+    ("EK-2026-0099", "SUP-005", date(2026, 7, 20), date(2026, 8, 19), "6500.00", None),
+    ("EK-2026-0100", "SUP-002", date(2026, 7, 22), date(2026, 8, 21), "4100.00", None),
+    ("EK-2026-0101", "SUP-001", date(2026, 7, 24), date(2026, 8, 23), "9300.00", None),
+    ("EK-2026-0102", "SUP-004", date(2026, 7, 27), date(2026, 8, 26), "2200.00", None),
+    ("EK-2026-0103", "SUP-005", date(2026, 7, 29), date(2026, 8, 28), "3400.00", None),
+]
+
+# ── Transactions ────────────────────────────────────────────────────────────
+# Amounts are ALWAYS POSITIVE - `direction` carries the sign, exactly as the
+# model declares. Settlements are generated from the invoices above so the
+# counterparty, the IBAN, the amount and the date can never drift apart.
+tx = []
+
+
+def book(dt, amount, direction, counterparty, cp_iban, description, reference, account=MAIN):
+    tx.append({
+        "date": d(dt), "amount": amount, "direction": direction,
+        "counterparty": counterparty, "counterparty_iban": cp_iban,
+        "description": description, "reference": reference, "account_iban": account,
+    })
+
+
+for inv_id, pid, issued, due, amount, paid in OUTBOUND:
+    if paid:
+        name, cp_iban = P[pid][1], P[pid][3]
+        book(paid, amount, "credit", name, cp_iban, f"Payment {inv_id}", inv_id)
+
+for inv_id, pid, issued, due, amount, paid in INBOUND:
+    if paid:
+        name, cp_iban = P[pid][1], P[pid][3]
+        book(paid, amount, "debit", name, cp_iban, f"Payment {inv_id}", inv_id)
+
+# Recurring operating movements - rent, utilities, telecom, salaries, insurance.
+for month, mname in ((5, "May"), (6, "June"), (7, "July")):
+    book(date(2026, month, 15), "1850.00", "debit", "Miller Office",
+         P["SUP-003"][3], f"Rent {mname} 2026", f"RENT-2026-{month:02d}")
+    book(date(2026, month, 3), "950.00", "debit", "Telecom Business Customers",
+         "DE20200700240012345601", f"Telecommunications {mname}", f"T-2026-{month:02d}")
+    book(date(2026, month, 2), "12000.00", "debit", f"Salaries {mname}",
+         PAYROLL, f"Wages and salaries {mname} 2026", f"LG-2026-{month:02d}")
+book(date(2026, 5, 8), "3200.00", "debit", "Berlin City Utilities",
+     P["SUP-004"][3], "Electricity April 2026", "RG-STW-042026")
+book(date(2026, 6, 10), "3200.00", "debit", "Berlin City Utilities",
+     P["SUP-004"][3], "Electricity May 2026", "RG-STW-052026")
+book(date(2026, 7, 10), "3400.00", "debit", "Berlin City Utilities",
+     P["SUP-004"][3], "Electricity June 2026", "RG-STW-062026")
+book(date(2026, 5, 20), "6700.00", "debit", "Logistics Express Ltd",
+     P["SUP-002"][3], "Freight April", "LOG-2026-04")
+book(date(2026, 6, 18), "5500.00", "debit", "Logistics Express Ltd",
+     P["SUP-002"][3], "Freight May", "LOG-2026-05")
+book(date(2026, 7, 21), "4200.00", "debit", "Allianz Insurance",
+     "DE73200400600000200000", "Business insurance Q3", "VS-Q3-2026")
+# Down payment on a project - cash in that is not an invoice settlement.
+book(date(2026, 6, 15), "22000.00", "credit", "Nordwind Maritime GmbH",
+     BP5_IBAN, "Down payment Project Gamma", "PRJ-GAMMA-01")
+
+# Cross-account movements, so no account sits without a single booking.
+book(date(2026, 6, 30), "10000.00", "debit", "Reserve Account", RESERVE,
+     "Transfer to reserve", "TRF-2026-06", account=MAIN)
+book(date(2026, 6, 30), "10000.00", "credit", "Main Business Account", MAIN,
+     "Transfer from main account", "TRF-2026-06", account=RESERVE)
+book(date(2026, 7, 6), "9000.00", "debit", "Tax Account", TAX,
+     "Transfer for VAT prepayment", "TRF-2026-07", account=MAIN)
+book(date(2026, 7, 6), "9000.00", "credit", "Main Business Account", MAIN,
+     "Transfer from main account", "TRF-2026-07", account=TAX)
+book(date(2026, 7, 10), "14800.00", "debit", "Cologne Tax Office",
+     "DE02120300000000202051", "VAT prepayment Q2 2026", "UST-Q2-2026", account=TAX)
+
+tx.sort(key=lambda r: (r["date"], r["account_iban"], r["reference"]))
+
+
+def balance_of(acct, opening):
+    bal = float(opening)
+    for r in tx:
+        if r["account_iban"] != acct:
+            continue
+        bal += float(r["amount"]) if r["direction"] == "credit" else -float(r["amount"])
+    return f"{bal:.2f}"
+
+
+# ── Write ───────────────────────────────────────────────────────────────────
+def write(name, header, rows):
+    with open(os.path.join(OUT, name), "w", newline="") as f:
+        w = csv.writer(f, lineterminator="\n")
+        w.writerow(header)
+        w.writerows(rows)
+
+
+write("business-partners.csv",
+      ["partner_id", "name", "role", "iban", "payment_terms_days", "cash_discount_percent",
+       "cash_discount_days", "city", "notes", "telegram_chat_id"],
+      [list(p) for p in PARTNERS])
+
+write("bank-accounts.csv",
+      ["iban", "account_name", "bank", "currency", "opening_balance", "opening_date",
+       "balance", "balance_date"],
+      [[i, n, b, "EUR", o, d(OPENING), balance_of(i, o), d(TODAY)] for i, n, b, o in ACCOUNTS])
+
+write("bank-transactions.csv",
+      ["date", "amount", "direction", "counterparty", "counterparty_iban", "description",
+       "reference", "account_iban"],
+      [[r["date"], r["amount"], r["direction"], r["counterparty"], r["counterparty_iban"],
+        r["description"], r["reference"], r["account_iban"]] for r in tx])
+
+write("invoices-outbound.csv",
+      ["invoice_id", "issued_date", "due_date", "paid_date", "amount", "currency",
+       "customer_id", "status", "payment_terms_days"],
+      [[i, d(iss), d(due), d(paid) if paid else "", amt, "EUR", pid,
+        "paid" if paid else "open", (due - iss).days]
+       for i, pid, iss, due, amt, paid in sorted(OUTBOUND, key=lambda r: r[0])])
+
+write("invoices-inbound.csv",
+      ["invoice_id", "issued_date", "due_date", "paid_date", "amount", "currency",
+       "supplier_id", "status", "payment_terms_days", "cash_discount_percent",
+       "cash_discount_days"],
+      [[i, d(iss), d(due), d(paid) if paid else "", amt, "EUR", pid,
+        "paid" if paid else "open", (due - iss).days, P[pid][5], P[pid][6]]
+       for i, pid, iss, due, amt, paid in sorted(INBOUND, key=lambda r: r[0])])
+
+write("credit-facilities.csv",
+      ["facility_id", "bank", "account_iban", "limit", "drawn", "review_date"],
+      [["KK-2026-001", "Commerce Bank Cologne", MAIN, "50000.00", "0.00", "2026-12-31"],
+       ["KK-2026-002", "Cologne-Bonn Savings Bank", TAX, "25000.00",
+        f"{max(0.0, -float(balance_of(TAX, '3200.00'))):.2f}", "2026-09-30"]])
+
+write("dunnings.csv",
+      ["id", "invoice_id", "partner_id", "level", "sent_date", "amount", "status"],
+      [["DUN-SEED-001", "RE-2026-0032", "BP-004", 1, "2026-06-25", "7400.00", "open"],
+       ["DUN-SEED-002", "RE-2026-0035", "BP-001", 1, "2026-07-13", "11500.00", "open"],
+       ["DUN-SEED-003", "RE-2026-0036", "BP-006", 2, "2026-07-27", "6800.00", "escalated"]])
+
+write("payment-promises.csv",
+      ["id", "invoice_id", "promised_date", "promised_amount", "status", "note"],
+      [["PROM-SEED-001", "RE-2026-0032", "2026-08-07", "7400.00", "open",
+        "Payment promised once the end customer pays"],
+       ["PROM-SEED-002", "RE-2026-0037", "2026-08-14", "4100.00", "open",
+        "Requested instalment payment in two tranches"],
+       ["PROM-SEED-003", "RE-2026-0035", "2026-07-20", "11500.00", "open",
+        "Promised for 20 July - the date has passed, the aging tick breaks it"]])
+
+write("payments.csv",
+      ["id", "invoice_id", "partner_id", "account_iban", "amount", "scheduled_date",
+       "executed_date", "method", "status"],
+      [["PAY-SEED-001", "EK-2026-0091", "SUP-001", MAIN, "8500.00", "2026-05-28",
+        "2026-05-29", "sepa", "executed"],
+       ["PAY-SEED-002", "EK-2026-0098", "SUP-001", MAIN, "3800.00", "2026-07-02",
+        "2026-07-02", "sepa", "executed"],
+       ["PAY-SEED-003", "EK-2026-0101", "SUP-001", MAIN, "9114.00", "2026-08-01",
+        "", "sepa", "approved"],
+       ["PAY-SEED-004", "EK-2026-0094", "SUP-001", MAIN, "5800.00", "2026-08-04",
+        "", "sepa", "planned"],
+       ["PAY-SEED-005", "EK-2026-0093", "SUP-003", MAIN, "1200.00", "2026-08-03",
+        "", "sepa", "planned"]])
+
+assert mod97_ok(BP5_IBAN) and mod97_ok(BP7_IBAN)
+print("BP-005", BP5_IBAN, " BP-007", BP7_IBAN)
+for i, n, b, o in ACCOUNTS:
+    print(f"{n:24} opening {o:>10}  ->  balance {balance_of(i, o):>10}")
+print(f"{len(tx)} transactions written to {OUT}")
