@@ -1,0 +1,24 @@
+# load.yaml — the readable load plan for this bundle.
+#
+#   wild tribe apply examples/tribes/web-crawler/ --as acme-crawler
+#
+# pins the ontology below, seeds the starter queue rows, and upserts the
+# queue-fed intake source — one command, a live crawler.
+
+ontology:
+  # The type vocabulary: the domain-authored work queue (`crawl_queue`,
+  # the ADR-0114 D1 contract shape) and the `page` target type.
+  - ontology/seeds.yaml
+
+# Starter queue rows (the operator-curated seed list — ADR-0114 D1
+# "seed" producer). The named mapping types the closed `status` enum
+# column; re-applying is an idempotent upsert (the URL is the record
+# KEY — dedup by construction).
+data:
+  - { file: data/seed-urls.csv, type: crawl_queue, intake: data/seed-urls.intake.yaml }
+
+# The queue-fed intake source (ADR-0114 D2/D3/D4): the generic
+# queue-enumerate connector paired with url-fetch, drained on every
+# committed queue write + an interval sweep.
+sources:
+  - ontology/sources/crawl.yaml

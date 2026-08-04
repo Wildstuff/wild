@@ -1,0 +1,20 @@
+# Standalone — a `macro_rules!`-only support crate consumed by the
+# Tier-2 tool-provider plugins via a `path` dependency. Each plugin is
+# its own standalone workspace, so this crate is too (it is never built
+# directly — it expands inside each plugin's wasm build).
+[workspace]
+
+[package]
+name = "tool-provider-scaffold"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+description = "Declarative macros that generate the boilerplate Tier-2 wild:tool-provider plugin surface (Component + ToolsGuest/MetaGuest + export!), so each connector/adapter declares only what varies."
+
+[lib]
+# Pure `macro_rules!` — no runtime code, no proc-macro. Compiles into
+# each consuming wasm plugin's build like any rlib dependency.
+path = "src/lib.rs"
+
+[dependencies]

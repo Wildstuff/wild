@@ -1,0 +1,46 @@
+# load.yaml — the readable load plan for this bundle (DDD lane).
+#
+# In the DDD lane the ONE `ontology/model.yaml` IS the ontology — the loader
+# does NOT read `seeds.yaml` / `functions/` / `verbs/` / `sources/` (there are
+# none here). Apply COMPILES the model into the exact DataCommand stream, then
+# ingests the seed data below.
+#
+#   wild tribe apply examples/tribes/fitness-tracker/ --as my-fitness
+#
+# pins the compiled ontology AND ingests the data/ seed records — one command, a
+# live, `ddd`-stamped calorie-coach chief (manifest.yaml is present). `--as`
+# lets one base spin up several clients (alice-fitness, bob-fitness, …), each
+# its own ontology + data.
+
+deploys: chief        # manifest.yaml present → a live calorie-coach chief
+
+# ── The constitution (compiled) ─────────────────────────────────────────
+# `wild_shared::ddd::compile` lowers the domain model, in enforced dependency
+# order, to:
+#   value object `kcal` (energy) + the closed value-sets   → the field bindings
+#   the Atwater function `@kcal_from_macros`                → before the types
+#   aggregates food/exercise/food_log/workout_log/goal      → the type vocabulary
+#     + their lifecycles, ENFORCED relations (eats/performs)   + verbs
+#   projections daily_intake/daily_burn/food_frequency      → grouped read-models
+#     + energy_balance                                        (net-calorie view)
+#   the web-search source binding                           → the intake_source
+model:
+  - ontology/model.yaml
+
+# ── Seed records (one-shot starter, lane-independent) ────────────────────
+# Each CSV maps 1:1 onto its aggregate (`intake: auto`; the sidecar
+# `<name>.intake.yaml` documents the identity map). Reference tables load BEFORE
+# the logs (the loader's enforced-reference order), so every log's food_id /
+# exercise_id resolves the ENFORCED `eats` / `performs` edge. This is the STARTER
+# seed; the recurring feed is the model's `fitness-web-search` source binding.
+data:
+  - { file: data/foods.csv,        type: food,         intake: auto }
+  - { file: data/exercises.csv,    type: exercise,     intake: auto }
+  - { file: data/recipes.csv,      type: recipe,       intake: auto }
+  - { file: data/food-log.csv,     type: food_log,     intake: auto }
+  - { file: data/workout-log.csv,  type: workout_log,  intake: auto }
+
+# Operator prerequisites for the live chief + the web-search loop:
+#   wild secret add api-key                 # your Brave Search API key
+#   wild secret grant brave-search api-key  # let the plugin read it
+#   wild config llm list                    # ensure an LLM adapter is configured
