@@ -1,0 +1,5 @@
+flowchart TD
+    Root["~/.wild/profiles/&lt;name&gt;/"]
+    Root --> Cfg["📝 you edit<br/>profile.yaml · ELDER.md<br/>llm-adapters.yaml · mcp-servers.yaml<br/>cli-binaries.yaml · plugin-config.yaml<br/>forge/allowlist.toml"]
+    Root --> State["🔎 you inspect<br/>ideas/ · tribes/ · decisions/<br/>sessions/ · files/"]
+    Root --> Sys["🔒 daemon-internal<br/>system/ — jetstream, caches,<br/>locks, logs (don't hand-edit)"]
