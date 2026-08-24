@@ -1,0 +1,63 @@
+# Minimal GENESIS fixture ontology (ADR-0108 DDD authoring source) for the
+# selection-eval walk `a-genesis-interview-proposes-one-round`.
+#
+# ONE aggregate, and deliberately so: the eval runner's readiness probe
+# (`readiness.rs::probe_once`) requires one non-system type before a trial may
+# start, and the setup interview must find an almost-empty world — every type
+# the operator's intent names (Halter, Fahrzeuge, Buchungen, Werkstatttermine,
+# TÜV) stays ABSENT here, because the walk measures whether the Elder proposes
+# that build as one frontier round instead of grinding it inline. A fixture
+# that already carried any of them would pre-satisfy the premise.
+context: fleet
+
+# ADR-0236 — what this tribe is FOR, kept to the minimum that is still honest:
+# a purpose the interview can check proposals against, and non-goals that are
+# true of the one type below.
+charter:
+  purpose: >
+    Wir bringen die Fuhrpark-Verwaltung gemeinsam ans Laufen: erst verstehen,
+    welche Objekte und Aufgaben der Alltag braucht, dann das Modell dazu
+    aufbauen — Schritt für Schritt, mit Freigabe vor jedem größeren Baustein.
+  non_goals:
+    # Deliberately scoped to the BIGGER blocks, matching the purpose: the
+    # kickoff licenses building the model DURING the interview (the shipped
+    # teaching commits the one or two central declarations as they clear), so
+    # a blanket "nothing without a go" would be a non-goal this tribe breaks
+    # by design — and a confound that steers the walk against the teaching it
+    # measures. What waits for the go is the frontier round.
+    - Größere Bausteine — Mengen an Beispieldaten, Apps, wiederkehrende
+      Aufgaben — bauen wir nicht ohne Freigabe des Operators. Die kommen als
+      nummerierte Liste auf den Tisch, gebaut wird erst nach dem Go.
+    - Wir kaufen, verkaufen und buchen nichts in der Welt — diese Domäne
+      verwaltet nur ihr eigenes Modell und ihre eigenen Daten.
+
+aggregates:
+  # The seed the readiness probe needs: one honest little type that is NOT on
+  # the operator's build list, so nothing the interview proposes can be
+  # mistaken for something the fixture already carried.
+  - name: notiz
+    context: fleet
+    display_name: Notiz
+    plural: Notizen
+    description: >-
+      Eine freie Notiz rund um den Fuhrpark — der Keim dieser Domäne, damit
+      vom ersten Moment an etwas festgehalten werden kann.
+    title_key: titel
+    icon: "📝"
+    color: "#d2a8ff"
+    category: Allgemein
+    customer_visible: false
+    identity:
+      key: [notiz_id]
+    state:
+      - { name: notiz_id, type: text, required: true }
+      - { name: titel, type: text, required: true, description: Worum es in der Notiz geht }
+      - { name: text, type: text, description: Der Notiztext }
+    commands:
+      - name: notiz_anlegen
+        description: Eine Notiz festhalten (Titel + Text).
+        risk: low
+        inputs:
+          - notiz_id
+          - titel
+          - { name: text, required: false }
